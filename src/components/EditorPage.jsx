@@ -6,6 +6,7 @@ import Canvas from './Canvas';
 import RightPanel from './RightPanel';
 import ModelsPopup from './ModelsPopup';
 import UploadsPopup from './UploadsPopup';
+import LayoutPopup from './LayoutPopup';
 
 export default function EditorPage() {
   const location = useLocation();
@@ -59,6 +60,9 @@ export default function EditorPage() {
                 uploadedImages={uploadedImages} 
               />
             )}
+            {activeTab === 'layout' && (
+              <LayoutPopup />
+            )}
           </div>
         </div>
 
@@ -85,6 +89,7 @@ export default function EditorPage() {
           }
         `}>
           <RightPanel
+            canvasRef={canvasRef}
             textureCanvasRef={textureCanvasRef}
             textureVersion={textureVersion}
             modelUrl={modelUrl}

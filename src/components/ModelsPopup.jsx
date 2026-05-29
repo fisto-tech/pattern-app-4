@@ -2,6 +2,7 @@ import sacuePocketModel from '../assets/models/sacue-pocket.glb';
 import cardBoxModel from '../assets/models/card-box.glb';
 import roundContainerModel from '../assets/models/round-container.glb';
 import tShirtBlackModel from '../assets/models/t-shirt-black.glb';
+import ModelThumbnail from './ModelThumbnail';
 
 const MODELS = [
   { id: 'sacue-pocket', name: 'Sacue', modelUrl: sacuePocketModel, active: true },
@@ -41,9 +42,7 @@ export default function ModelsPopup({ onSelectModel, currentModelUrl }) {
                   isActive ? 'border-orange-400 bg-orange-50' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
                 }`}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#c0623a" className="w-8 h-8 opacity-80">
-                  <path d="M12 21.5L2.5 16V8L12 2.5L21.5 8V16L12 21.5ZM12 4.7L4.5 9.1V14.9L12 19.3L19.5 14.9V9.1L12 4.7Z" />
-                </svg>
+                <ModelThumbnail modelUrl={model.modelUrl} className="h-12 w-full" />
                 <span className="text-[9px] font-medium text-gray-600 mt-1">{model.name}</span>
                 {isActive && (
                   <div className="absolute bottom-1 right-1 w-4 h-4 bg-[#fb6c11] rounded-full flex items-center justify-center">

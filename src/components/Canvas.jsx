@@ -437,7 +437,7 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
   const selectedImageRef = useRef(null);
   const [selectedImage, setSelectedImage] = useState(null);
   const contextMenuTargetRef = useRef(null);
-  const [contextMenu, setContextMenu] = useState({ open: false, x: 0, y: 0 });
+  const [contextMenu, setContextMenu] = useState({ open: false, x: 0, y: 0, mode: 'image' });
   
   const interactionRef = useRef({
     isDragging: false,
@@ -449,6 +449,7 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
     startAngle: 0,
     aspectRatio: 1,
   });
+
 
   const currentMeshRef = useRef(null);
   const canvasScaleRef = useRef(1);
@@ -659,8 +660,12 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
   }, [modelUrl, redrawAll, resizeDisplayCanvas, resizeTextureCanvas]);
 
   useEffect(() => {
-    redrawAll();
-  }, [showUv, bgColor, redrawAll]);
+    redrawDisplay();
+  }, [showUv, redrawDisplay]);
+
+  useEffect(() => {
+    bakeTexture();
+  }, [bgColor, bakeTexture]);
 
   useEffect(() => {
     window.addEventListener('resize', resizeDisplayCanvas);
@@ -693,7 +698,7 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
     if (e.button === 2) return;
 
     if (contextMenu.open) {
-      setContextMenu({ open: false, x: 0, y: 0 });
+      setContextMenu({ open: false, x: 0, y: 0, mode: 'image' });
       contextMenuTargetRef.current = null;
     }
 
@@ -785,8 +790,6 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
       }
     }
 
-    if (!clickedImage) return;
-
     e.preventDefault();
     const containerRect = container.getBoundingClientRect();
     contextMenuTargetRef.current = clickedImage;
@@ -796,6 +799,7 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
       open: true,
       x: e.clientX - containerRect.left,
       y: e.clientY - containerRect.top,
+      mode: clickedImage ? 'image' : 'canvas',
     });
     redrawDisplay();
   };
@@ -917,7 +921,7 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
   useEffect(() => {
     const closeMenu = () => {
       contextMenuTargetRef.current = null;
-      setContextMenu({ open: false, x: 0, y: 0 });
+      setContextMenu({ open: false, x: 0, y: 0, mode: 'image' });
     };
     const onKeyDown = (e) => {
       if (e.key === 'Escape') closeMenu();
@@ -958,6 +962,21 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
   useImperativeHandle(ref, () => ({
     uploadImage: (file) => {
       onUploadImage(file);
+    },
+    exportAsPNG: () => {
+      const exportCanvas = document.createElement('canvas');
+      exportCanvas.width = textureSizeRef.current.width;
+      exportCanvas.height = textureSizeRef.current.height;
+      const ctx = exportCanvas.getContext('2d');
+      imagesRef.current.forEach(img => {
+        ctx.save();
+        ctx.globalAlpha = img.opacity;
+        ctx.translate(img.x + img.width / 2, img.y + img.height / 2);
+        ctx.rotate(img.rotation);
+        ctx.drawImage(img.img, -img.width / 2, -img.height / 2, img.width, img.height);
+        ctx.restore();
+      });
+      return exportCanvas.toDataURL('image/png');
     }
   }));
   
@@ -968,7 +987,7 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
     selectedImageRef.current = null;
     contextMenuTargetRef.current = null;
     setSelectedImage(null);
-    setContextMenu({ open: false, x: 0, y: 0 });
+    setContextMenu({ open: false, x: 0, y: 0, mode: 'image' });
     redrawAll();
   };
 
@@ -982,7 +1001,7 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
     selectedImageRef.current = copy;
     contextMenuTargetRef.current = null;
     setSelectedImage(copy);
-    setContextMenu({ open: false, x: 0, y: 0 });
+    setContextMenu({ open: false, x: 0, y: 0, mode: 'image' });
     redrawAll();
   };
 
@@ -995,7 +1014,7 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
     selectedImageRef.current = target;
     contextMenuTargetRef.current = null;
     setSelectedImage(target);
-    setContextMenu({ open: false, x: 0, y: 0 });
+    setContextMenu({ open: false, x: 0, y: 0, mode: 'image' });
     redrawAll();
   };
 
@@ -1008,7 +1027,24 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
     selectedImageRef.current = target;
     contextMenuTargetRef.current = null;
     setSelectedImage(target);
-    setContextMenu({ open: false, x: 0, y: 0 });
+    setContextMenu({ open: false, x: 0, y: 0, mode: 'image' });
+    redrawAll();
+  };
+
+  const onRequestClearAll = () => {
+    setContextMenu((menu) => ({ ...menu, mode: 'confirm-clear' }));
+  };
+
+  const onCancelClearAll = () => {
+    setContextMenu((menu) => ({ ...menu, mode: 'canvas' }));
+  };
+
+  const onClearAllImages = () => {
+    imagesRef.current = [];
+    selectedImageRef.current = null;
+    contextMenuTargetRef.current = null;
+    setSelectedImage(null);
+    setContextMenu({ open: false, x: 0, y: 0, mode: 'image' });
     redrawAll();
   };
   
@@ -1073,11 +1109,39 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
             onPointerDown={(e) => e.stopPropagation()}
             onContextMenu={(e) => e.preventDefault()}
           >
-            <ContextMenuItem onClick={onDuplicate}>Duplicate</ContextMenuItem>
-            <ContextMenuItem onClick={onBringToFront}>Bring to Front</ContextMenuItem>
-            <ContextMenuItem onClick={onBringToBack}>Bring to Back</ContextMenuItem>
-            <div className="my-1 h-px bg-gray-100" />
-            <ContextMenuItem onClick={onDelete} danger>Delete</ContextMenuItem>
+            {contextMenu.mode === 'image' && (
+              <>
+                <ContextMenuItem onClick={onDuplicate}>Duplicate</ContextMenuItem>
+                <ContextMenuItem onClick={onBringToFront}>Bring to Front</ContextMenuItem>
+                <ContextMenuItem onClick={onBringToBack}>Bring to Back</ContextMenuItem>
+                <div className="my-1 h-px bg-gray-100" />
+                <ContextMenuItem onClick={onDelete} danger>Delete</ContextMenuItem>
+              </>
+            )}
+            {contextMenu.mode === 'canvas' && (
+              <ContextMenuItem onClick={onRequestClearAll} danger>Clear all images</ContextMenuItem>
+            )}
+            {contextMenu.mode === 'confirm-clear' && (
+              <div className="px-3 py-2">
+                <p className="m-0 mb-2 text-sm font-semibold text-gray-800">Clear all images?</p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={onClearAllImages}
+                    className="flex-1 rounded-md border-none bg-red-600 px-3 py-1.5 text-sm font-semibold text-white cursor-pointer hover:bg-red-700"
+                  >
+                    OK
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onCancelClearAll}
+                    className="flex-1 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm font-semibold text-gray-700 cursor-pointer hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

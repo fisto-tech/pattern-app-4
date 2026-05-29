@@ -16,6 +16,7 @@ const packageColors = [
 ];
 
 export default function RightPanel({
+  canvasRef,
   textureCanvasRef,
   textureVersion,
   modelUrl,
@@ -37,11 +38,11 @@ export default function RightPanel({
   const colorTimeoutRef = useRef(null);
   const glCanvasRef = useRef(null);
   const captureRef = useRef(null);
+  const orbitControlsRef = useRef(null);
 
   const handleExportCanvasPNG = () => {
-    const canvas = textureCanvasRef?.current;
-    if (!canvas) return;
-    const url = canvas.toDataURL('image/png');
+    if (!canvasRef?.current) return;
+    const url = canvasRef.current.exportAsPNG();
     const a = document.createElement('a');
     a.href = url;
     a.download = 'texture-canvas.png';
@@ -107,6 +108,10 @@ export default function RightPanel({
         lastColorUpdate.current = Date.now();
       }, 50);
     }
+  };
+
+  const resetPreviewCamera = () => {
+    orbitControlsRef.current?.reset();
   };
 
   return (
@@ -233,16 +238,15 @@ export default function RightPanel({
             gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true }}
             onCreated={({ gl }) => {
               gl.outputColorSpace = THREE.SRGBColorSpace;
-              gl.toneMapping = THREE.ACESFilmicToneMapping;
-              gl.toneMappingExposure = 1.25;
-              gl.setClearColor(new THREE.Color('#b4aca4'), 1);
+              gl.toneMapping = THREE.NeutralToneMapping;
+              gl.toneMappingExposure = 1;
+              gl.setClearColor(new THREE.Color('#aaa29a'), 1);
             }}
           >
-            <ambientLight intensity={1.05} />
-            <hemisphereLight intensity={0.75} color="#ffffff" groundColor="#8b8b8b" />
-            <directionalLight position={[3, 4, 3]} intensity={1.55} />
-            <directionalLight position={[-3, 2, -2]} intensity={0.9} />
+            <ambientLight intensity={0.7} />
             <Environment preset="city" />
+            <directionalLight position={[4, 5, 4]} intensity={0.8} />
+            <directionalLight position={[-4, 3, -4]} intensity={0.3} />
             <Suspense fallback={null}>
               {modelUrl && (
                 <AutoSizedModel
@@ -256,6 +260,7 @@ export default function RightPanel({
             </Suspense>
             <ScreenshotHelper ref={captureRef} />
             <OrbitControls
+              ref={orbitControlsRef}
               enablePan={false}
               enableZoom={true}
               minPolarAngle={0}
@@ -263,7 +268,13 @@ export default function RightPanel({
             />
           </R3FCanvas>
           {/* Refresh button */}
-          <button className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-white/70 backdrop-blur-sm border-none cursor-pointer flex items-center justify-center text-gray-500 hover:bg-white transition-colors" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.15)' }}>
+          <button
+            type="button"
+            title="Reset model view"
+            onClick={resetPreviewCamera}
+            className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-white/70 backdrop-blur-sm border-none cursor-pointer flex items-center justify-center text-gray-500 hover:bg-white transition-colors"
+            style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.15)' }}
+          >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
               <path fillRule="evenodd" d="M13.836 2.477a.75.75 0 0 1 .75.75v3.182a.75.75 0 0 1-.75.75h-3.182a.75.75 0 0 1 0-1.5h1.37l-.84-.841a4.5 4.5 0 0 0-7.08.681.75.75 0 0 1-1.3-.75 6 6 0 0 1 9.44-.908l.84.84V3.227a.75.75 0 0 1 .75-.75Zm-.911 7.5A.75.75 0 0 1 13.199 11a6 6 0 0 1-9.44.908l-.84-.84v1.462a.75.75 0 0 1-1.5 0V9.348a.75.75 0 0 1 .75-.75h3.182a.75.75 0 0 1 0 1.5H3.981l.84.841a4.5 4.5 0 0 0 7.08-.681.75.75 0 0 1 1.025-.274Z" clipRule="evenodd" />
             </svg>
@@ -362,6 +373,7 @@ export default function RightPanel({
 
 function AutoSizedModel({ modelUrl, textureCanvasRef, textureVersion, wireframe }) {
   const { scene } = useGLTF(modelUrl);
+  const { gl } = useThree();
   const clonedScene = useMemo(() => {
     if (!scene) return null;
 
@@ -413,11 +425,19 @@ function AutoSizedModel({ modelUrl, textureCanvasRef, textureVersion, wireframe 
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.wrapS = THREE.ClampToEdgeWrapping;
       tex.wrapT = THREE.ClampToEdgeWrapping;
+      tex.generateMipmaps = true;
+      tex.minFilter = THREE.LinearMipmapLinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      tex.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy());
       tex.flipY = false;
       tex.needsUpdate = true;
       canvasTextureRef.current = tex;
     } else {
       canvasTextureRef.current.image = textureCanvas;
+      canvasTextureRef.current.generateMipmaps = true;
+      canvasTextureRef.current.minFilter = THREE.LinearMipmapLinearFilter;
+      canvasTextureRef.current.magFilter = THREE.LinearFilter;
+      canvasTextureRef.current.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy());
       canvasTextureRef.current.needsUpdate = true;
     }
 
@@ -428,13 +448,16 @@ function AutoSizedModel({ modelUrl, textureCanvasRef, textureVersion, wireframe 
         if (!mat) continue;
         if ('map' in mat) {
           mat.map = canvasTextureRef.current;
+          if ('color' in mat) mat.color.set(0xffffff);
+          if ('emissive' in mat) mat.emissive.set(0x000000);
           mat.transparent = true;
           mat.needsUpdate = true;
         }
-        if ('envMapIntensity' in mat) mat.envMapIntensity = 1.25;
-        if ('roughness' in mat) mat.roughness = Math.max(0.18, mat.roughness * 0.82);
-        if ('metalness' in mat) mat.metalness = Math.max(0.02, mat.metalness * 0.5);
+        if ('envMapIntensity' in mat) mat.envMapIntensity = 0.08;
+        if ('roughness' in mat) mat.roughness = Math.max(0.72, mat.roughness);
+        if ('metalness' in mat) mat.metalness = 0;
         if (mat.side !== undefined) { mat.side = THREE.DoubleSide; }
+        if ('toneMapped' in mat) mat.toneMapped = true;
         mat.wireframe = wireframe;
         mat.needsUpdate = true;
       }
@@ -492,13 +515,25 @@ const ScreenshotHelper = forwardRef((_, ref) => {
 
   useImperativeHandle(ref, () => ({
     capture: () => {
-      // Force a fresh render with the current state
+      // Save current pixel ratio
+      const currentPixelRatio = gl.getPixelRatio();
+      
+      // Temporarily set a high pixel ratio for a high-quality render
+      gl.setPixelRatio(4);
+      
+      // Force a fresh render with the high-res state
       gl.render(scene, camera);
-      // Read the framebuffer (preserveDrawingBuffer must be true)
-      const url = gl.domElement.toDataURL('image/png');
+      
+      // Read the framebuffer
+      const url = gl.domElement.toDataURL('image/png', 1.0);
+      
+      // Restore original state to prevent the UI from staying high-res/slow
+      gl.setPixelRatio(currentPixelRatio);
+      gl.render(scene, camera);
+      
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'model-render.png';
+      a.download = 'model-render-high-res.png';
       a.click();
     },
   }));

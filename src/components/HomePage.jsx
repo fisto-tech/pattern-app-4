@@ -1,36 +1,11 @@
-import React, { useState, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from './Navbar';
+import ModelThumbnail from './ModelThumbnail';
 import sacuePocketModel from '../assets/models/sacue-pocket.glb';
 import cardBoxModel from '../assets/models/card-box.glb';
 import roundContainerModel from '../assets/models/round-container.glb';
 import tShirtBlackModel from '../assets/models/t-shirt-black.glb';
-
-const MODEL_ICONS = {
-  box: (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#c0623a" className="w-12 h-12 opacity-80">
-      <path d="M3.375 4.5C2.339 4.5 1.5 5.34 1.5 6.375V13.5h12V6.375c0-1.036-.84-1.875-1.875-1.875h-8.25ZM13.5 15h-12v2.625c0 1.035.84 1.875 1.875 1.875h.375a3 3 0 1 1 6 0h3a.75.75 0 0 0 .75-.75V15Z" />
-      <path d="M8.25 19.5a1.5 1.5 0 1 0-3 0 1.5 1.5 0 0 0 3 0ZM15.75 6.75a.75.75 0 0 0-.75.75v11.25c0 .087.015.17.042.248a3 3 0 0 1 5.958.464c.853-.175 1.522-.935 1.464-1.883a18.659 18.659 0 0 0-3.732-10.104 1.837 1.837 0 0 0-1.47-.725H15.75Z" />
-      <path d="M19.5 19.5a1.5 1.5 0 1 0-3 0 1.5 1.5 0 0 0 3 0Z" />
-    </svg>
-  ),
-  bottle: (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#c0623a" className="w-12 h-12 opacity-80">
-      <path fillRule="evenodd" d="M10.5 3.75a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 .75.75v.75h.75a.75.75 0 0 1 .625.334l2.25 3.5A.75.75 0 0 1 17 9H7a.75.75 0 0 1-.625-1.166l2.25-3.5A.75.75 0 0 1 9.25 4.5H10.5v-.75ZM7.5 10.5a.75.75 0 0 0-.75.75v8.25a1.5 1.5 0 0 0 1.5 1.5h7.5a1.5 1.5 0 0 0 1.5-1.5v-8.25a.75.75 0 0 0-.75-.75h-9Z" clipRule="evenodd" />
-    </svg>
-  ),
-  shirt: (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#c0623a" className="w-12 h-12 opacity-80">
-      <path d="M16.5 6.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18 8.25a6 6 0 1 0-12 0v2.625a.75.75 0 0 0 .75.75h10.5a.75.75 0 0 0 .75-.75V8.25Z" />
-      <path fillRule="evenodd" d="M1.5 8.25a.75.75 0 0 1 .75-.75h3.75v2.625A2.25 2.25 0 0 1 3.75 12.375H2.25a.75.75 0 0 1-.75-.75V8.25ZM22.5 8.25a.75.75 0 0 0-.75-.75h-3.75v2.625a2.25 2.25 0 0 0 2.25 2.25h1.5a.75.75 0 0 0 .75-.75V8.25ZM6 13.5v7.5h12v-7.5H6Z" clipRule="evenodd" />
-    </svg>
-  ),
-  generic: (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#c0623a" className="w-12 h-12 opacity-80">
-      <path d="M12 21.5L2.5 16V8L12 2.5L21.5 8V16L12 21.5ZM12 4.7L4.5 9.1V14.9L12 19.3L19.5 14.9V9.1L12 4.7Z" />
-    </svg>
-  ),
-};
 
 const PRESET_PRODUCTS = [
   {
@@ -39,7 +14,6 @@ const PRESET_PRODUCTS = [
     modelUrl: sacuePocketModel,
     description: 'Compact pocket mockup',
     bgColor: '#fff8f5',
-    icon: 'generic',
   },
   {
     id: 'card-box',
@@ -47,7 +21,6 @@ const PRESET_PRODUCTS = [
     modelUrl: cardBoxModel,
     description: 'Rigid card-style box',
     bgColor: '#f5f8ff',
-    icon: 'box',
   },
   {
     id: 'round-container',
@@ -55,7 +28,6 @@ const PRESET_PRODUCTS = [
     modelUrl: roundContainerModel,
     description: 'Cylindrical round container',
     bgColor: '#f5fff8',
-    icon: 'bottle',
   },
   {
     id: 't-shirt-black',
@@ -63,7 +35,6 @@ const PRESET_PRODUCTS = [
     modelUrl: tShirtBlackModel,
     description: 'Classic black tee mockup',
     bgColor: '#fafafa',
-    icon: 'shirt',
   },
 ];
 
@@ -77,7 +48,7 @@ export default function HomePage() {
     if (!file) return;
     const url = URL.createObjectURL(file);
     const name = file.name.replace(/\.glb$/i, '').replace(/[-_]/g, ' ');
-    setCustomProducts(prev => [{ id: url, name, modelUrl: url, description: 'Custom uploaded model', bgColor: '#fff5fa', icon: 'generic' }, ...prev]);
+    setCustomProducts(prev => [{ id: url, name, modelUrl: url, description: 'Custom uploaded model', bgColor: '#fff5fa' }, ...prev]);
     e.target.value = '';
   };
 
@@ -127,7 +98,7 @@ export default function HomePage() {
               style={{ background: product.bgColor, boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}
             >
               <div className="w-28 h-28 bg-white rounded-2xl flex items-center justify-center mb-5 shadow-sm border border-gray-100 transition-transform duration-300 group-hover:scale-105">
-                {MODEL_ICONS[product.icon] || MODEL_ICONS.generic}
+                <ModelThumbnail modelUrl={product.modelUrl} className="h-full w-full" />
               </div>
               <h2 className="text-lg font-bold text-gray-800 mb-1">{product.name}</h2>
               <p className="text-sm text-gray-500 mb-5">{product.description}</p>
