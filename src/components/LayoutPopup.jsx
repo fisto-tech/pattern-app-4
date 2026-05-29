@@ -7,7 +7,7 @@ const layoutItems = Array.from({ length: 16 }, (_, index) => ({
 
 export default function LayoutPopup() {
   return (
-    <div className="w-[350px] h-full shrink-0 bg-white rounded-[15px] shadow-[0_8px_30px_rgb(0,0,0,0.08)] overflow-hidden flex flex-col">
+    <div className="w-[350px] h-fit shrink-0 bg-white rounded-[15px] shadow-[0_8px_30px_rgb(0,0,0,0.08)] overflow-hidden flex flex-col">
       <div className="p-5 pb-3">
         <h2 className="text-xl font-bold text-gray-900 m-0">Layout</h2>
       </div>
