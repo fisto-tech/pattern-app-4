@@ -31,6 +31,18 @@ class DraggableImage {
     this.opacity = 1;
   }
 
+  clone(offset = 32) {
+    const copy = Object.create(DraggableImage.prototype);
+    copy.img = this.img;
+    copy.width = this.width;
+    copy.height = this.height;
+    copy.x = this.x + offset;
+    copy.y = this.y + offset;
+    copy.rotation = this.rotation;
+    copy.opacity = this.opacity;
+    return copy;
+  }
+
   // Get the center in texture-space
   getCenterTex() {
     return { x: this.x + this.width / 2, y: this.y + this.height / 2 };
@@ -306,7 +318,7 @@ function drawUVs(mesh, ctx, w, h) {
     (largest, component) => Math.max(largest, component.area),
     0
   );
-  const minContourArea = Math.max(largestContourArea * 0.035, 0.0015);
+  const minContourArea = Math.max(largestContourArea * 0.05, 0.0025);
 
   ctx.beginPath();
   outlineComponents.forEach((component) => {
@@ -424,6 +436,8 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
   const imagesRef = useRef([]);
   const selectedImageRef = useRef(null);
   const [selectedImage, setSelectedImage] = useState(null);
+  const contextMenuTargetRef = useRef(null);
+  const [contextMenu, setContextMenu] = useState({ open: false, x: 0, y: 0 });
   
   const interactionRef = useRef({
     isDragging: false,
@@ -462,6 +476,19 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
   const resizeTextureCanvas = useCallback((nextSize) => {
     const width = Math.max(1, Math.round(nextSize.width));
     const height = Math.max(1, Math.round(nextSize.height));
+    const previousSize = textureSizeRef.current;
+
+    if (previousSize.width !== width || previousSize.height !== height) {
+      const scaleX = width / previousSize.width;
+      const scaleY = height / previousSize.height;
+      imagesRef.current.forEach((img) => {
+        img.x *= scaleX;
+        img.y *= scaleY;
+        img.width *= scaleX;
+        img.height *= scaleY;
+      });
+    }
+
     textureSizeRef.current = { width, height };
 
     const bakeCanvas = textureCanvasRef.current;
@@ -603,6 +630,7 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
   }, [redrawDisplay]);
 
   useEffect(() => {
+    let isActive = true;
     currentMeshRef.current = null;
     if (!modelUrl) {
         resizeTextureCanvas(DEFAULT_TEXTURE_SIZE);
@@ -611,6 +639,7 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
     }
     const loader = new GLTFLoader();
     loader.load(modelUrl, (gltf) => {
+      if (!isActive) return;
       let firstMesh = null;
       gltf.scene.traverse((child) => {
         if (child.isMesh && !firstMesh) {
@@ -623,6 +652,10 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
       resizeDisplayCanvas();
       redrawAll();
     });
+
+    return () => {
+      isActive = false;
+    };
   }, [modelUrl, redrawAll, resizeDisplayCanvas, resizeTextureCanvas]);
 
   useEffect(() => {
@@ -657,6 +690,13 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
   // --- Pointer handlers ---
 
   const handlePointerDown = (e) => {
+    if (e.button === 2) return;
+
+    if (contextMenu.open) {
+      setContextMenu({ open: false, x: 0, y: 0 });
+      contextMenuTargetRef.current = null;
+    }
+
     const displayCanvas = displayCanvasRef.current;
     if (!displayCanvas) return;
     
@@ -723,6 +763,40 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
       startRenderLoop();
     }
 
+    redrawDisplay();
+  };
+
+  const handleContextMenu = (e) => {
+    const displayCanvas = displayCanvasRef.current;
+    const container = containerRef.current;
+    if (!displayCanvas || !container) return;
+
+    const rect = displayCanvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const scale = canvasScaleRef.current;
+
+    let clickedImage = null;
+    for (let i = imagesRef.current.length - 1; i >= 0; i--) {
+      const img = imagesRef.current[i];
+      if (img.contains(mx, my, scale)) {
+        clickedImage = img;
+        break;
+      }
+    }
+
+    if (!clickedImage) return;
+
+    e.preventDefault();
+    const containerRect = container.getBoundingClientRect();
+    contextMenuTargetRef.current = clickedImage;
+    selectedImageRef.current = clickedImage;
+    setSelectedImage(clickedImage);
+    setContextMenu({
+      open: true,
+      x: e.clientX - containerRect.left,
+      y: e.clientY - containerRect.top,
+    });
     redrawDisplay();
   };
 
@@ -840,6 +914,25 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
     return () => window.removeEventListener('pointerup', onPointerUp);
   }, [bakeTexture, redrawDisplay]);
 
+  useEffect(() => {
+    const closeMenu = () => {
+      contextMenuTargetRef.current = null;
+      setContextMenu({ open: false, x: 0, y: 0 });
+    };
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') closeMenu();
+    };
+
+    window.addEventListener('resize', closeMenu);
+    window.addEventListener('scroll', closeMenu, true);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('resize', closeMenu);
+      window.removeEventListener('scroll', closeMenu, true);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
+
   // Cleanup RAF on unmount
   useEffect(() => {
     return () => {
@@ -869,10 +962,53 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
   }));
   
   const onDelete = () => {
-    if (!selectedImageRef.current) return;
-    imagesRef.current = imagesRef.current.filter(i => i !== selectedImageRef.current);
+    const target = contextMenuTargetRef.current || selectedImageRef.current;
+    if (!target) return;
+    imagesRef.current = imagesRef.current.filter(i => i !== target);
     selectedImageRef.current = null;
+    contextMenuTargetRef.current = null;
     setSelectedImage(null);
+    setContextMenu({ open: false, x: 0, y: 0 });
+    redrawAll();
+  };
+
+  const onDuplicate = () => {
+    const target = contextMenuTargetRef.current || selectedImageRef.current;
+    if (!target) return;
+
+    const copy = target.clone();
+    const insertAt = imagesRef.current.indexOf(target) + 1;
+    imagesRef.current.splice(insertAt, 0, copy);
+    selectedImageRef.current = copy;
+    contextMenuTargetRef.current = null;
+    setSelectedImage(copy);
+    setContextMenu({ open: false, x: 0, y: 0 });
+    redrawAll();
+  };
+
+  const onBringToFront = () => {
+    const target = contextMenuTargetRef.current || selectedImageRef.current;
+    if (!target) return;
+
+    imagesRef.current = imagesRef.current.filter(i => i !== target);
+    imagesRef.current.push(target);
+    selectedImageRef.current = target;
+    contextMenuTargetRef.current = null;
+    setSelectedImage(target);
+    setContextMenu({ open: false, x: 0, y: 0 });
+    redrawAll();
+  };
+
+  const onBringToBack = () => {
+    const target = contextMenuTargetRef.current || selectedImageRef.current;
+    if (!target) return;
+
+    imagesRef.current = imagesRef.current.filter(i => i !== target);
+    imagesRef.current.unshift(target);
+    selectedImageRef.current = target;
+    contextMenuTargetRef.current = null;
+    setSelectedImage(target);
+    setContextMenu({ open: false, x: 0, y: 0 });
     redrawAll();
   };
   
@@ -913,6 +1049,7 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
+              onContextMenu={handleContextMenu}
               style={{ cursor: 'default' }}
               className="touch-none"
             />
@@ -927,6 +1064,21 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
               <div className="w-px h-4 bg-gray-300 my-auto mx-1" />
               <CtrlBtn title="Delete" onClick={onDelete} danger>🗑 Delete</CtrlBtn>
             </div>
+        )}
+
+        {contextMenu.open && (
+          <div
+            className="absolute z-30 min-w-[170px] overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-xl"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            <ContextMenuItem onClick={onDuplicate}>Duplicate</ContextMenuItem>
+            <ContextMenuItem onClick={onBringToFront}>Bring to Front</ContextMenuItem>
+            <ContextMenuItem onClick={onBringToBack}>Bring to Back</ContextMenuItem>
+            <div className="my-1 h-px bg-gray-100" />
+            <ContextMenuItem onClick={onDelete} danger>Delete</ContextMenuItem>
+          </div>
         )}
       </div>
     </div>
@@ -943,6 +1095,20 @@ function CtrlBtn({ title, onClick, children, danger }) {
       onClick={onClick}
       className={`rounded px-2.5 py-1.5 text-xs font-bold transition-colors border-none cursor-pointer ${
         danger ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ContextMenuItem({ onClick, children, danger }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`block w-full border-none bg-transparent px-4 py-2 text-left text-sm cursor-pointer ${
+        danger ? 'text-red-600 hover:bg-red-50' : 'text-gray-800 hover:bg-gray-50'
       }`}
     >
       {children}
