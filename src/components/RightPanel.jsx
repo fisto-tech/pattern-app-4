@@ -359,14 +359,14 @@ export default function RightPanel({
       </div>
 
       {/* Custom Material */}
-      <div className="px-3 pb-3">
+      {/* <div className="px-3 pb-3">
         <h3 className="text-[12px] font-semibold text-gray-800 mb-2 mt-0">Custom Material</h3>
         <div className="flex flex-col gap-[6px]">
           <MaterialItem icon="shadow" title="Shadow Effects" subtitle="Hide Shadow" />
           <MaterialItem icon="camera" title="Camera View" subtitle="Front Right" hasArrow />
           <MaterialItem icon="size" title="Custom Size" subtitle="12.4 × 7.5 × 3.4 in" />
         </div>
-      </div>
+      </div> */}
     </aside>
   );
 }
