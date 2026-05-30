@@ -217,12 +217,26 @@ class DraggableImage {
 
 function drawUVs(mesh, ctx, w, h) {
   const geometry = mesh.geometry;
-  if (!geometry.attributes.uv) return;
+  if (!geometry.attributes.uv) {
+    console.warn('[drawUVs] No UV attribute on mesh:', mesh.name);
+    return;
+  }
 
   const uvAttr = geometry.attributes.uv;
   const index = geometry.index;
   const edgeCounts = new Map();
   const uvPrecision = 100000;
+
+  console.log(`[drawUVs] Mesh: "${mesh.name}", indexed: ${!!index}, uvCount: ${uvAttr.count}, indexCount: ${index?.count || 0}, canvas: ${w}x${h}`);
+
+  // Log UV range
+  let dbgMinU = Infinity, dbgMaxU = -Infinity, dbgMinV = Infinity, dbgMaxV = -Infinity;
+  for (let i = 0; i < uvAttr.count; i++) {
+    const u = uvAttr.getX(i), v = uvAttr.getY(i);
+    dbgMinU = Math.min(dbgMinU, u); dbgMaxU = Math.max(dbgMaxU, u);
+    dbgMinV = Math.min(dbgMinV, v); dbgMaxV = Math.max(dbgMaxV, v);
+  }
+  console.log(`[drawUVs] UV range: u=[${dbgMinU.toFixed(4)}, ${dbgMaxU.toFixed(4)}], v=[${dbgMinV.toFixed(4)}, ${dbgMaxV.toFixed(4)}]`);
 
   ctx.save();
   ctx.strokeStyle = 'rgba(59, 130, 246, 0.85)';
@@ -264,6 +278,15 @@ function drawUVs(mesh, ctx, w, h) {
       addEdge(i + 2, i);
     }
   }
+
+  // Debug edge count distribution
+  let c1 = 0, c2 = 0, cOther = 0;
+  for (const edge of edgeCounts.values()) {
+    if (edge.count === 1) c1++;
+    else if (edge.count === 2) c2++;
+    else cOther++;
+  }
+  console.log(`[drawUVs] Edge counts: total=${edgeCounts.size}, boundary(1)=${c1}, interior(2)=${c2}, other=${cOther}`);
 
   const boundaryEdges = Array.from(edgeCounts.values()).filter((edge) => edge.count === 1);
   const adjacency = new Map();
@@ -320,15 +343,24 @@ function drawUVs(mesh, ctx, w, h) {
   );
   const minContourArea = Math.max(largestContourArea * 0.05, 0.0025);
 
+  console.log(`[drawUVs] Components: ${outlineComponents.length}, largestArea: ${largestContourArea.toFixed(6)}, threshold: ${minContourArea.toFixed(6)}`);
+  outlineComponents.forEach((c, i) => {
+    const passes = c.edgeCount >= 4 && c.area >= minContourArea;
+    console.log(`[drawUVs]   Component #${i}: edges=${c.edgeCount}, area=${c.area.toFixed(6)} → ${passes ? 'DRAWN' : 'FILTERED'}`);
+  });
+
   ctx.beginPath();
+  let drawnEdgeCount = 0;
   outlineComponents.forEach((component) => {
     if (component.edgeCount < 4 || component.area < minContourArea) return;
     component.edges.forEach((edge) => {
       ctx.moveTo(edge.p1.u * w, edge.p1.v * h);
       ctx.lineTo(edge.p2.u * w, edge.p2.v * h);
+      drawnEdgeCount++;
     });
   });
   ctx.stroke();
+  console.log(`[drawUVs] Total edges drawn: ${drawnEdgeCount}`);
   ctx.restore();
 }
 
@@ -641,15 +673,42 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
     const loader = new GLTFLoader();
     loader.load(modelUrl, (gltf) => {
       if (!isActive) return;
-      let firstMesh = null;
+      // Find the mesh with the best UV data (not just the first mesh)
+      let bestMesh = null;
+      let bestScore = -1;
       gltf.scene.traverse((child) => {
-        if (child.isMesh && !firstMesh) {
-          firstMesh = child;
+        if (!child.isMesh) return;
+        const uvAttr = child.geometry?.attributes?.uv;
+        if (!uvAttr || uvAttr.count === 0) return;
+
+        // Calculate UV spread — wider spread = more useful UV layout
+        let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+        for (let i = 0; i < uvAttr.count; i++) {
+          const u = uvAttr.getX(i), v = uvAttr.getY(i);
+          minU = Math.min(minU, u); maxU = Math.max(maxU, u);
+          minV = Math.min(minV, v); maxV = Math.max(maxV, v);
+        }
+        const uvArea = (maxU - minU) * (maxV - minV);
+
+        // Score: UV spread area is most important, bonus for having a texture map
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        const hasMap = materials.some((m) => m?.map);
+        const score = uvArea * 1000 + (hasMap ? 500 : 0) + uvAttr.count * 0.001;
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestMesh = child;
         }
       });
-      currentMeshRef.current = firstMesh;
+      // Fallback to first mesh if no UV-bearing mesh found
+      if (!bestMesh) {
+        gltf.scene.traverse((child) => {
+          if (child.isMesh && !bestMesh) bestMesh = child;
+        });
+      }
+      currentMeshRef.current = bestMesh;
       const materialSize = getTextureSizeFromGltf(gltf);
-      resizeTextureCanvas(materialSize || estimateTextureSizeFromUv(firstMesh));
+      resizeTextureCanvas(materialSize || estimateTextureSizeFromUv(bestMesh));
       resizeDisplayCanvas();
       redrawAll();
     });

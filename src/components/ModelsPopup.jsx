@@ -3,6 +3,8 @@ import sacuePocketModel from '../assets/models/sacue-pocket.glb';
 import cardBoxModel from '../assets/models/card-box.glb';
 import roundContainerModel from '../assets/models/round-container.glb';
 import tShirtBlackModel from '../assets/models/t-shirt-black.glb';
+import foodPacking1Model from '../assets/models/test/food-packing-1.glb';
+import plasticBox1Model from '../assets/models/test/plastic-box-1.glb';
 import ModelThumbnail from './ModelThumbnail';
 
 const BUILT_IN_MODELS = [
@@ -10,6 +12,8 @@ const BUILT_IN_MODELS = [
   { id: 'card-box', name: 'Card Box', modelUrl: cardBoxModel },
   { id: 'round-container', name: 'Round', modelUrl: roundContainerModel },
   { id: 't-shirt', name: 'T-Shirt', modelUrl: tShirtBlackModel },
+  { id: 'food-packing-1', name: 'Food Pack', modelUrl: foodPacking1Model },
+  { id: 'plastic-box-1', name: 'Plastic Box', modelUrl: plasticBox1Model },
 ];
 
 export default function ModelsPopup({ onSelectModel, currentModelUrl }) {

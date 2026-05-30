@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>UV Debug</title>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
+      "three/examples/jsm/loaders/GLTFLoader.js": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/loaders/GLTFLoader.js"
+    }
+  }
+  </script>
+</head>
+<body>
+<h2>UV Debug Tool</h2>
+<pre id="output" style="white-space: pre-wrap; font-size:12px;"></pre>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+
+const out = document.getElementById('output');
+function log(msg) {
+  out.textContent += msg + '\n';
+  console.log(msg);
+}
+
+const models = [
+  { name: 'sacue-pocket (working)', url: '../assets/models/sacue-pocket.glb' },
+  { name: 'card-box (working)', url: '../assets/models/card-box.glb' },
+  { name: 'food-packing-1 (BROKEN)', url: '../assets/models/test/food-packing-1.glb' },
+  { name: 'plastic-box-1 (BROKEN)', url: '../assets/models/test/plastic-box-1.glb' },
+];
+
+const loader = new GLTFLoader();
+
+for (const model of models) {
+  try {
+    const gltf = await new Promise((resolve, reject) => {
+      loader.load(model.url, resolve, undefined, reject);
+    });
+
+    log(`\n========== ${model.name} ==========`);
+    
+    let meshIndex = 0;
+    gltf.scene.traverse((child) => {
+      if (!child.isMesh) return;
+      
+      const geometry = child.geometry;
+      const uvAttr = geometry.attributes.uv;
+      const index = geometry.index;
+      const posAttr = geometry.attributes.position;
+      
+      log(`  Mesh #${meshIndex}: "${child.name}"`);
+      log(`    Material: ${child.material?.type || 'none'}, name: "${child.material?.name || 'unnamed'}"`);
+      log(`    Has map: ${!!child.material?.map}`);
+      log(`    Has UV: ${!!uvAttr}`);
+      log(`    Indexed: ${!!index}`);
+      log(`    Vertex count (position): ${posAttr?.count || 0}`);
+      log(`    UV count: ${uvAttr?.count || 0}`);
+      log(`    Index count: ${index?.count || 0}`);
+      log(`    Triangle count: ${index ? index.count / 3 : (uvAttr?.count || 0) / 3}`);
+      
+      if (uvAttr) {
+        let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+        for (let i = 0; i < uvAttr.count; i++) {
+          const u = uvAttr.getX(i);
+          const v = uvAttr.getY(i);
+          minU = Math.min(minU, u);
+          maxU = Math.max(maxU, u);
+          minV = Math.min(minV, v);
+          maxV = Math.max(maxV, v);
+        }
+        log(`    UV range: u=[${minU.toFixed(4)}, ${maxU.toFixed(4)}], v=[${minV.toFixed(4)}, ${maxV.toFixed(4)}]`);
+        log(`    UV span: width=${(maxU - minU).toFixed(4)}, height=${(maxV - minV).toFixed(4)}`);
+        
+        // Run the edge counting logic
+        const uvPrecision = 100000;
+        const edgeCounts = new Map();
+        
+        const getUvPoint = (vertexIndex) => ({
+          u: Math.round(uvAttr.getX(vertexIndex) * uvPrecision) / uvPrecision,
+          v: Math.round(uvAttr.getY(vertexIndex) * uvPrecision) / uvPrecision,
+        });
+        
+        const pointKey = (point) => `${point.u},${point.v}`;
+        
+        const addEdge = (a, b) => {
+          const p1 = getUvPoint(a);
+          const p2 = getUvPoint(b);
+          const k1 = pointKey(p1);
+          const k2 = pointKey(p2);
+          const key = k1 < k2 ? `${k1}|${k2}` : `${k2}|${k1}`;
+          const edge = edgeCounts.get(key) || { p1, p2, k1, k2, count: 0 };
+          edge.count += 1;
+          edgeCounts.set(key, edge);
+        };
+        
+        if (index) {
+          for (let i = 0; i < index.count; i += 3) {
+            const a = index.getX(i);
+            const b = index.getX(i + 1);
+            const c = index.getX(i + 2);
+            addEdge(a, b);
+            addEdge(b, c);
+            addEdge(c, a);
+          }
+        } else {
+          for (let i = 0; i < uvAttr.count; i += 3) {
+            addEdge(i, i + 1);
+            addEdge(i + 1, i + 2);
+            addEdge(i + 2, i);
+          }
+        }
+        
+        let count1 = 0, count2 = 0, countOther = 0;
+        const countDistribution = new Map();
+        for (const edge of edgeCounts.values()) {
+          if (edge.count === 1) count1++;
+          else if (edge.count === 2) count2++;
+          else countOther++;
+          countDistribution.set(edge.count, (countDistribution.get(edge.count) || 0) + 1);
+        }
+        
+        log(`    Total unique UV edges: ${edgeCounts.size}`);
+        log(`    Boundary edges (count=1): ${count1}`);
+        log(`    Interior edges (count=2): ${count2}`);
+        log(`    Other edges (count>2): ${countOther}`);
+        log(`    Count distribution: ${JSON.stringify(Object.fromEntries(countDistribution))}`);
+        
+        // Now check component filtering
+        const boundaryEdges = Array.from(edgeCounts.values()).filter(e => e.count === 1);
+        const adjacency = new Map();
+        boundaryEdges.forEach((edge, edgeIndex) => {
+          [edge.k1, edge.k2].forEach((key) => {
+            const connected = adjacency.get(key) || [];
+            connected.push(edgeIndex);
+            adjacency.set(key, connected);
+          });
+        });
+        
+        const visitedEdges = new Set();
+        const outlineComponents = [];
+        boundaryEdges.forEach((edge, startIndex) => {
+          if (visitedEdges.has(startIndex)) return;
+          
+          const stack = [startIndex];
+          const componentEdgeIndexes = [];
+          let cMinU = Infinity, cMaxU = -Infinity, cMinV = Infinity, cMaxV = -Infinity;
+          
+          while (stack.length) {
+            const edgeIndex = stack.pop();
+            if (visitedEdges.has(edgeIndex)) continue;
+            visitedEdges.add(edgeIndex);
+            componentEdgeIndexes.push(edgeIndex);
+            
+            const currentEdge = boundaryEdges[edgeIndex];
+            cMinU = Math.min(cMinU, currentEdge.p1.u, currentEdge.p2.u);
+            cMaxU = Math.max(cMaxU, currentEdge.p1.u, currentEdge.p2.u);
+            cMinV = Math.min(cMinV, currentEdge.p1.v, currentEdge.p2.v);
+            cMaxV = Math.max(cMaxV, currentEdge.p1.v, currentEdge.p2.v);
+            
+            [currentEdge.k1, currentEdge.k2].forEach((point) => {
+              adjacency.get(point)?.forEach((nextEdgeIndex) => {
+                if (!visitedEdges.has(nextEdgeIndex)) stack.push(nextEdgeIndex);
+              });
+            });
+          }
+          
+          outlineComponents.push({
+            area: (cMaxU - cMinU) * (cMaxV - cMinV),
+            edgeCount: componentEdgeIndexes.length,
+            uRange: [cMinU, cMaxU],
+            vRange: [cMinV, cMaxV],
+          });
+        });
+        
+        const largestContourArea = outlineComponents.reduce((l, c) => Math.max(l, c.area), 0);
+        const minContourArea = Math.max(largestContourArea * 0.05, 0.0025);
+        
+        log(`    Outline components found: ${outlineComponents.length}`);
+        log(`    Largest contour area: ${largestContourArea.toFixed(6)}`);
+        log(`    Min contour area threshold: ${minContourArea.toFixed(6)}`);
+        
+        outlineComponents.forEach((comp, i) => {
+          const passes = comp.edgeCount >= 4 && comp.area >= minContourArea;
+          log(`      Component #${i}: edges=${comp.edgeCount}, area=${comp.area.toFixed(6)}, u=[${comp.uRange[0].toFixed(4)},${comp.uRange[1].toFixed(4)}], v=[${comp.vRange[0].toFixed(4)},${comp.vRange[1].toFixed(4)}] → ${passes ? '✅ DRAWN' : '❌ FILTERED OUT'}`);
+        });
+        
+        const drawnComponents = outlineComponents.filter(c => c.edgeCount >= 4 && c.area >= minContourArea);
+        log(`    Components that pass filter: ${drawnComponents.length}`);
+      }
+      
+      meshIndex++;
+    });
+    
+  } catch (err) {
+    log(`  ERROR loading ${model.name}: ${err.message}`);
+  }
+}
+
+log('\n\n=== DONE ===');
+</script>
+</body>
+</html>
