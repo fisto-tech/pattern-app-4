@@ -74,9 +74,9 @@ export default function ModelsPopup({ onSelectModel, currentModelUrl }) {
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
             <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
           </svg>
-          <input 
-            type="text" 
-            placeholder="Search models..." 
+          <input
+            type="text"
+            placeholder="Search models..."
             className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#fb6c11]"
           />
         </div>
@@ -104,12 +104,11 @@ export default function ModelsPopup({ onSelectModel, currentModelUrl }) {
           {models.map((model) => {
             const isActive = currentModelUrl === model.modelUrl;
             return (
-              <button 
+              <button
                 key={model.id}
                 onClick={() => onSelectModel(model.modelUrl)}
-                className={`aspect-square rounded-xl flex flex-col items-center justify-center p-2 relative overflow-hidden transition-all cursor-pointer border-2 ${
-                  isActive ? 'border-orange-400 bg-orange-50' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
-                }`}
+                className={`aspect-square rounded-xl flex flex-col items-center justify-center p-2 relative overflow-hidden transition-all cursor-pointer border-2 ${isActive ? 'border-orange-400 bg-orange-50' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+                  }`}
               >
                 <ModelThumbnail modelUrl={model.modelUrl} className="h-12 w-full" />
                 <span className="text-[9px] font-medium text-gray-600 mt-1">{model.name}</span>

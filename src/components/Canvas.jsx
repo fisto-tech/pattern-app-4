@@ -22,11 +22,11 @@ class DraggableImage {
     this.img = img;
     this.width = textureSize.width * 0.4;
     this.height = (this.width / img.width) * img.height;
-    
+
     // Center initially
     this.x = (textureSize.width - this.width) / 2;
     this.y = (textureSize.height - this.height) / 2;
-    
+
     this.rotation = 0;
     this.opacity = 1;
   }
@@ -157,12 +157,12 @@ class DraggableImage {
     ctx.lineWidth = 1.5;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    
+
     // Circular arrow
     ctx.beginPath();
     ctx.arc(0, 0, 6, -Math.PI * 0.8, Math.PI * 0.5, false);
     ctx.stroke();
-    
+
     // Arrow head
     const aex = 6 * Math.cos(Math.PI * 0.5);
     const aey = 6 * Math.sin(Math.PI * 0.5);
@@ -171,7 +171,7 @@ class DraggableImage {
     ctx.lineTo(aex, aey);
     ctx.lineTo(aex + 3, aey - 2);
     ctx.stroke();
-    
+
     ctx.restore();
 
     ctx.restore();
@@ -464,13 +464,13 @@ function estimateTextureSizeFromUv(mesh) {
 const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showUv, bgColor }, ref) => {
   const displayCanvasRef = useRef(null);
   const containerRef = useRef(null);
-  
+
   const imagesRef = useRef([]);
   const selectedImageRef = useRef(null);
   const [selectedImage, setSelectedImage] = useState(null);
   const contextMenuTargetRef = useRef(null);
   const [contextMenu, setContextMenu] = useState({ open: false, x: 0, y: 0, mode: 'image' });
-  
+
   const interactionRef = useRef({
     isDragging: false,
     mode: HANDLE.NONE,
@@ -567,7 +567,7 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
     const ctx = displayCanvas.getContext('2d');
     const w = displayCanvas.width;
     const h = displayCanvas.height;
-    
+
     ctx.clearRect(0, 0, w, h);
 
     if (showUv && currentMeshRef.current) {
@@ -666,9 +666,9 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
     let isActive = true;
     currentMeshRef.current = null;
     if (!modelUrl) {
-        resizeTextureCanvas(DEFAULT_TEXTURE_SIZE);
-        resizeDisplayCanvas();
-        return;
+      resizeTextureCanvas(DEFAULT_TEXTURE_SIZE);
+      resizeDisplayCanvas();
+      return;
     }
     const loader = new GLTFLoader();
     loader.load(modelUrl, (gltf) => {
@@ -729,7 +729,7 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
   useEffect(() => {
     window.addEventListener('resize', resizeDisplayCanvas);
     setTimeout(resizeDisplayCanvas, 100);
-    
+
     return () => window.removeEventListener('resize', resizeDisplayCanvas);
   }, [resizeDisplayCanvas]);
 
@@ -763,7 +763,7 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
 
     const displayCanvas = displayCanvasRef.current;
     if (!displayCanvas) return;
-    
+
     const rect = displayCanvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
@@ -785,7 +785,7 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
         interaction.startImgW = sel.width;
         interaction.startImgH = sel.height;
         interaction.aspectRatio = sel.width / sel.height;
-        
+
         if (handle === HANDLE.ROTATE) {
           const cx = (sel.x + sel.width / 2) / scale;
           const cy = (sel.y + sel.height / 2) / scale;
@@ -795,7 +795,7 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
         } else {
           setCursor(getCursorForHandle(handle));
         }
-        
+
         displayCanvas.setPointerCapture(e.pointerId);
         startRenderLoop();
         return;
@@ -932,7 +932,7 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
       const dist = Math.max(Math.abs(lx), Math.abs(ly) * interaction.aspectRatio);
       const newHW = Math.max(10 / scale, dist);
       const newHH = newHW / interaction.aspectRatio;
-      
+
       img.width = newHW * 2 * scale;
       img.height = newHH * 2 * scale;
       img.x = center.x - img.width / 2;
@@ -1038,7 +1038,7 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
       return exportCanvas.toDataURL('image/png');
     }
   }));
-  
+
   const onDelete = () => {
     const target = contextMenuTargetRef.current || selectedImageRef.current;
     if (!target) return;
@@ -1106,7 +1106,7 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
     setContextMenu({ open: false, x: 0, y: 0, mode: 'image' });
     redrawAll();
   };
-  
+
   const onBringForward = () => {
     if (!selectedImageRef.current) return;
     const idx = imagesRef.current.indexOf(selectedImageRef.current);
@@ -1150,15 +1150,15 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
             />
           </div>
         </div>
-        
+
         {/* Selected Image Controls */}
         {selectedImage && (
-            <div className="absolute top-4 right-4 z-20 flex gap-2 bg-white/90 backdrop-blur p-2 rounded-xl shadow-sm border border-gray-100">
-              <CtrlBtn title="Bring Forward" onClick={onBringForward}>↑ Forward</CtrlBtn>
-              <CtrlBtn title="Send Backward" onClick={onSendBackward}>↓ Backward</CtrlBtn>
-              <div className="w-px h-4 bg-gray-300 my-auto mx-1" />
-              <CtrlBtn title="Delete" onClick={onDelete} danger>🗑 Delete</CtrlBtn>
-            </div>
+          <div className="absolute top-4 right-4 z-20 flex gap-2 bg-white/90 backdrop-blur p-2 rounded-xl shadow-sm border border-gray-100">
+            <CtrlBtn title="Bring Forward" onClick={onBringForward}>↑ Forward</CtrlBtn>
+            <CtrlBtn title="Send Backward" onClick={onSendBackward}>↓ Backward</CtrlBtn>
+            <div className="w-px h-4 bg-gray-300 my-auto mx-1" />
+            <CtrlBtn title="Delete" onClick={onDelete} danger>🗑 Delete</CtrlBtn>
+          </div>
         )}
 
         {contextMenu.open && (
@@ -1216,9 +1216,8 @@ function CtrlBtn({ title, onClick, children, danger }) {
       type="button"
       title={title}
       onClick={onClick}
-      className={`rounded px-2.5 py-1.5 text-xs font-bold transition-colors border-none cursor-pointer ${
-        danger ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-      }`}
+      className={`rounded px-2.5 py-1.5 text-xs font-bold transition-colors border-none cursor-pointer ${danger ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+        }`}
     >
       {children}
     </button>
@@ -1230,9 +1229,8 @@ function ContextMenuItem({ onClick, children, danger }) {
     <button
       type="button"
       onClick={onClick}
-      className={`block w-full border-none bg-transparent px-4 py-2 text-left text-sm cursor-pointer ${
-        danger ? 'text-red-600 hover:bg-red-50' : 'text-gray-800 hover:bg-gray-50'
-      }`}
+      className={`block w-full border-none bg-transparent px-4 py-2 text-left text-sm cursor-pointer ${danger ? 'text-red-600 hover:bg-red-50' : 'text-gray-800 hover:bg-gray-50'
+        }`}
     >
       {children}
     </button>
