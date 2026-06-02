@@ -215,7 +215,7 @@ class DraggableImage {
   }
 }
 
-function drawUVs(mesh, ctx, w, h) {
+function drawUVs(mesh, ctx, w, h, drawFull) {
   const geometry = mesh.geometry;
   if (!geometry.attributes.uv) {
     console.warn('[drawUVs] No UV attribute on mesh:', mesh.name);
@@ -223,26 +223,53 @@ function drawUVs(mesh, ctx, w, h) {
   }
 
   const uvAttr = geometry.attributes.uv;
+  const posAttr = geometry.attributes.position;
   const index = geometry.index;
-  const edgeCounts = new Map();
-  const uvPrecision = 100000;
-
-  console.log(`[drawUVs] Mesh: "${mesh.name}", indexed: ${!!index}, uvCount: ${uvAttr.count}, indexCount: ${index?.count || 0}, canvas: ${w}x${h}`);
-
-  // Log UV range
-  let dbgMinU = Infinity, dbgMaxU = -Infinity, dbgMinV = Infinity, dbgMaxV = -Infinity;
-  for (let i = 0; i < uvAttr.count; i++) {
-    const u = uvAttr.getX(i), v = uvAttr.getY(i);
-    dbgMinU = Math.min(dbgMinU, u); dbgMaxU = Math.max(dbgMaxU, u);
-    dbgMinV = Math.min(dbgMinV, v); dbgMaxV = Math.max(dbgMaxV, v);
-  }
-  console.log(`[drawUVs] UV range: u=[${dbgMinU.toFixed(4)}, ${dbgMaxU.toFixed(4)}], v=[${dbgMinV.toFixed(4)}, ${dbgMaxV.toFixed(4)}]`);
 
   ctx.save();
   ctx.strokeStyle = 'rgba(59, 130, 246, 0.85)';
   ctx.lineWidth = 1.5;
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
+  ctx.beginPath();
+
+  // If drawFull is true, simply draw all triangles
+  if (drawFull) {
+    const drawLine = (idx1, idx2) => {
+      const u1 = uvAttr.getX(idx1);
+      const v1 = uvAttr.getY(idx1);
+      const u2 = uvAttr.getX(idx2);
+      const v2 = uvAttr.getY(idx2);
+      ctx.moveTo(u1 * w, v1 * h);
+      ctx.lineTo(u2 * w, v2 * h);
+    };
+
+    if (index) {
+      for (let i = 0; i < index.count; i += 3) {
+        const a = index.getX(i);
+        const b = index.getX(i + 1);
+        const c = index.getX(i + 2);
+        drawLine(a, b);
+        drawLine(b, c);
+        drawLine(c, a);
+      }
+    } else {
+      for (let i = 0; i < uvAttr.count; i += 3) {
+        drawLine(i, i + 1);
+        drawLine(i + 1, i + 2);
+        drawLine(i + 2, i);
+      }
+    }
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  const uvPrecision = 100000;
+
+  // ── Step 1: Build UV edge counts ──
+  // An edge shared by only 1 triangle = outline/boundary edge of a UV island
+  const edgeCounts = new Map();
 
   const getUvPoint = (vertexIndex) => ({
     u: Math.round(uvAttr.getX(vertexIndex) * uvPrecision) / uvPrecision,
@@ -251,15 +278,37 @@ function drawUVs(mesh, ctx, w, h) {
 
   const pointKey = (point) => `${point.u},${point.v}`;
 
+  // Also track 3D→UV mapping for seam detection
+  const posPrec = 10000;
+  const edge3DMap = new Map();
+
+  const quantizePos = (idx) => {
+    if (!posAttr) return `${idx}`;
+    const x = posAttr.getX(idx);
+    const y = posAttr.getY(idx);
+    const z = posAttr.getZ(idx);
+    return `${Math.round(x * posPrec)},${Math.round(y * posPrec)},${Math.round(z * posPrec)}`;
+  };
+
   const addEdge = (a, b) => {
     const p1 = getUvPoint(a);
     const p2 = getUvPoint(b);
     const k1 = pointKey(p1);
     const k2 = pointKey(p2);
+    if (k1 === k2) return; // degenerate
     const key = k1 < k2 ? `${k1}|${k2}` : `${k2}|${k1}`;
     const edge = edgeCounts.get(key) || { p1, p2, k1, k2, count: 0 };
     edge.count += 1;
     edgeCounts.set(key, edge);
+
+    // Track 3D→UV for seam detection
+    if (posAttr) {
+      const posA = quantizePos(a);
+      const posB = quantizePos(b);
+      const posKey = posA < posB ? `${posA}|${posB}` : `${posB}|${posA}`;
+      if (!edge3DMap.has(posKey)) edge3DMap.set(posKey, new Set());
+      edge3DMap.get(posKey).add(key);
+    }
   };
 
   if (index) {
@@ -279,88 +328,85 @@ function drawUVs(mesh, ctx, w, h) {
     }
   }
 
-  // Debug edge count distribution
-  let c1 = 0, c2 = 0, cOther = 0;
-  for (const edge of edgeCounts.values()) {
-    if (edge.count === 1) c1++;
-    else if (edge.count === 2) c2++;
-    else cOther++;
-  }
-  console.log(`[drawUVs] Edge counts: total=${edgeCounts.size}, boundary(1)=${c1}, interior(2)=${c2}, other=${cOther}`);
+  // ── Step 2: Collect outline edges ──
+  // Boundary edges (count === 1) + UV seam edges
+  const outlineKeys = new Set();
 
-  const boundaryEdges = Array.from(edgeCounts.values()).filter((edge) => edge.count === 1);
+  // 2a. UV boundary edges
+  for (const [key, edge] of edgeCounts) {
+    if (edge.count === 1) outlineKeys.add(key);
+  }
+
+  // 2b. UV seam edges — same 3D edge maps to 2+ different UV edges
+  for (const uvKeys of edge3DMap.values()) {
+    if (uvKeys.size > 1) {
+      for (const uvKey of uvKeys) outlineKeys.add(uvKey);
+    }
+  }
+
+  const outlineEdges = [];
+  for (const key of outlineKeys) {
+    const edge = edgeCounts.get(key);
+    if (edge) outlineEdges.push(edge);
+  }
+
+  // ── Step 3: Group into connected components and filter noise ──
   const adjacency = new Map();
-  boundaryEdges.forEach((edge, edgeIndex) => {
+  outlineEdges.forEach((edge, idx) => {
     [edge.k1, edge.k2].forEach((key) => {
-      const connected = adjacency.get(key) || [];
-      connected.push(edgeIndex);
-      adjacency.set(key, connected);
+      const list = adjacency.get(key) || [];
+      list.push(idx);
+      adjacency.set(key, list);
     });
   });
 
-  const visitedEdges = new Set();
-  const outlineComponents = [];
-  boundaryEdges.forEach((edge, startIndex) => {
-    if (visitedEdges.has(startIndex)) return;
+  const visited = new Set();
+  const components = [];
+  outlineEdges.forEach((_, startIdx) => {
+    if (visited.has(startIdx)) return;
 
-    const stack = [startIndex];
-    const componentEdgeIndexes = [];
-    let minU = Infinity;
-    let maxU = -Infinity;
-    let minV = Infinity;
-    let maxV = -Infinity;
+    const stack = [startIdx];
+    const comp = { edges: [], minU: Infinity, maxU: -Infinity, minV: Infinity, maxV: -Infinity };
 
     while (stack.length) {
-      const edgeIndex = stack.pop();
-      if (visitedEdges.has(edgeIndex)) continue;
+      const idx = stack.pop();
+      if (visited.has(idx)) continue;
+      visited.add(idx);
 
-      visitedEdges.add(edgeIndex);
-      componentEdgeIndexes.push(edgeIndex);
+      const edge = outlineEdges[idx];
+      comp.edges.push(edge);
+      comp.minU = Math.min(comp.minU, edge.p1.u, edge.p2.u);
+      comp.maxU = Math.max(comp.maxU, edge.p1.u, edge.p2.u);
+      comp.minV = Math.min(comp.minV, edge.p1.v, edge.p2.v);
+      comp.maxV = Math.max(comp.maxV, edge.p1.v, edge.p2.v);
 
-      const currentEdge = boundaryEdges[edgeIndex];
-      minU = Math.min(minU, currentEdge.p1.u, currentEdge.p2.u);
-      maxU = Math.max(maxU, currentEdge.p1.u, currentEdge.p2.u);
-      minV = Math.min(minV, currentEdge.p1.v, currentEdge.p2.v);
-      maxV = Math.max(maxV, currentEdge.p1.v, currentEdge.p2.v);
-
-      [currentEdge.k1, currentEdge.k2].forEach((point) => {
-        adjacency.get(point)?.forEach((nextEdgeIndex) => {
-          if (!visitedEdges.has(nextEdgeIndex)) stack.push(nextEdgeIndex);
+      [edge.k1, edge.k2].forEach((key) => {
+        adjacency.get(key)?.forEach((nextIdx) => {
+          if (!visited.has(nextIdx)) stack.push(nextIdx);
         });
       });
     }
 
-    outlineComponents.push({
-      area: (maxU - minU) * (maxV - minV),
-      edgeCount: componentEdgeIndexes.length,
-      edges: componentEdgeIndexes.map((edgeIndex) => boundaryEdges[edgeIndex]),
-    });
+    comp.area = (comp.maxU - comp.minU) * (comp.maxV - comp.minV);
+    components.push(comp);
   });
 
-  const largestContourArea = outlineComponents.reduce(
-    (largest, component) => Math.max(largest, component.area),
-    0
-  );
-  const minContourArea = Math.max(largestContourArea * 0.05, 0.0025);
+  // ── Step 4: Draw using simple u*w, v*h mapping ──
+  const largestArea = components.reduce((max, c) => Math.max(max, c.area), 0);
+  const minArea = Math.max(largestArea * 0.05, 0.0025);
 
-  console.log(`[drawUVs] Components: ${outlineComponents.length}, largestArea: ${largestContourArea.toFixed(6)}, threshold: ${minContourArea.toFixed(6)}`);
-  outlineComponents.forEach((c, i) => {
-    const passes = c.edgeCount >= 4 && c.area >= minContourArea;
-    console.log(`[drawUVs]   Component #${i}: edges=${c.edgeCount}, area=${c.area.toFixed(6)} → ${passes ? 'DRAWN' : 'FILTERED'}`);
-  });
-
-  ctx.beginPath();
   let drawnEdgeCount = 0;
-  outlineComponents.forEach((component) => {
-    if (component.edgeCount < 4 || component.area < minContourArea) return;
-    component.edges.forEach((edge) => {
+  components.forEach((comp) => {
+    if (comp.edges.length < 4 || comp.area < minArea) return;
+    comp.edges.forEach((edge) => {
       ctx.moveTo(edge.p1.u * w, edge.p1.v * h);
       ctx.lineTo(edge.p2.u * w, edge.p2.v * h);
       drawnEdgeCount++;
     });
   });
+
   ctx.stroke();
-  console.log(`[drawUVs] Total edges drawn: ${drawnEdgeCount}`);
+  console.log(`[drawUVs] Drawn ${drawnEdgeCount} outline edges for mesh "${mesh.name}".`);
   ctx.restore();
 }
 
@@ -370,23 +416,10 @@ function estimateTextureSizeFromUv(mesh) {
   if (!uvAttr) return DEFAULT_TEXTURE_SIZE;
 
   const index = geometry.index;
-  let minU = Infinity;
-  let maxU = -Infinity;
-  let minV = Infinity;
-  let maxV = -Infinity;
+  let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
   const parent = Array.from({ length: uvAttr.count }, (_, i) => i);
-  const find = (x) => {
-    while (parent[x] !== x) {
-      parent[x] = parent[parent[x]];
-      x = parent[x];
-    }
-    return x;
-  };
-  const union = (a, b) => {
-    const ra = find(a);
-    const rb = find(b);
-    if (ra !== rb) parent[rb] = ra;
-  };
+  const find = (x) => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+  const union = (a, b) => { const ra = find(a); const rb = find(b); if (ra !== rb) parent[rb] = ra; };
 
   const readTriangle = (i) => index
     ? [index.getX(i), index.getX(i + 1), index.getX(i + 2)]
@@ -404,24 +437,15 @@ function estimateTextureSizeFromUv(mesh) {
     const root = find(i);
     const u = uvAttr.getX(i);
     const v = uvAttr.getY(i);
-    const island = islands.get(root) || {
-      minU: Infinity,
-      maxU: -Infinity,
-      minV: Infinity,
-      maxV: -Infinity,
-      count: 0,
-    };
+    const island = islands.get(root) || { minU: Infinity, maxU: -Infinity, minV: Infinity, maxV: -Infinity, count: 0 };
     island.minU = Math.min(island.minU, u);
     island.maxU = Math.max(island.maxU, u);
     island.minV = Math.min(island.minV, v);
     island.maxV = Math.max(island.maxV, v);
     island.count += 1;
     islands.set(root, island);
-
-    minU = Math.min(minU, u);
-    maxU = Math.max(maxU, u);
-    minV = Math.min(minV, v);
-    maxV = Math.max(maxV, v);
+    minU = Math.min(minU, u); maxU = Math.max(maxU, u);
+    minV = Math.min(minV, v); maxV = Math.max(maxV, v);
   }
 
   const layoutWidth = maxU - minU;
@@ -439,29 +463,18 @@ function estimateTextureSizeFromUv(mesh) {
     const height = island.maxV - island.minV;
     const area = width * height;
     if (width <= 0 || height <= 0 || area < 0.01) return;
-
     const rawAspect = height / width;
     const score = area * island.count;
-    if (rawAspect < 0.5 && area > 0.05) {
-      hasWideCompanionIsland = true;
-    }
-    if (rawAspect > 1.2 && score > bestScore) {
-      bestAspect = rawAspect;
-      bestScore = score;
-    }
+    if (rawAspect < 0.5 && area > 0.05) hasWideCompanionIsland = true;
+    if (rawAspect > 1.2 && score > bestScore) { bestAspect = rawAspect; bestScore = score; }
   });
 
-  if (!hasWideCompanionIsland || bestAspect === 1) {
-    return DEFAULT_TEXTURE_SIZE;
-  }
+  if (!hasWideCompanionIsland || bestAspect === 1) return DEFAULT_TEXTURE_SIZE;
 
-  return {
-    width: TEXTURE_WIDTH,
-    height: Math.round(TEXTURE_WIDTH / bestAspect),
-  };
+  return { width: TEXTURE_WIDTH, height: Math.round(TEXTURE_WIDTH / bestAspect) };
 }
 
-const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showUv, bgColor }, ref) => {
+const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showUv, fullUv, bgColor }, ref) => {
   const displayCanvasRef = useRef(null);
   const containerRef = useRef(null);
 
@@ -515,10 +528,17 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
       const scaleX = width / previousSize.width;
       const scaleY = height / previousSize.height;
       imagesRef.current.forEach((img) => {
-        img.x *= scaleX;
-        img.y *= scaleY;
-        img.width *= scaleX;
-        img.height *= scaleY;
+        // Preserve image aspect ratio by using a uniform scale
+        const uniformScale = Math.min(scaleX, scaleY);
+        // Keep the center of the image in the same relative position
+        const cx = img.x + img.width / 2;
+        const cy = img.y + img.height / 2;
+        
+        img.width *= uniformScale;
+        img.height *= uniformScale;
+        
+        img.x = (cx * scaleX) - (img.width / 2);
+        img.y = (cy * scaleY) - (img.height / 2);
       });
     }
 
@@ -571,7 +591,7 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
     ctx.clearRect(0, 0, w, h);
 
     if (showUv && currentMeshRef.current) {
-      drawUVs(currentMeshRef.current, ctx, w, h);
+      drawUVs(currentMeshRef.current, ctx, w, h, fullUv);
     }
 
     const scale = canvasScaleRef.current;
@@ -583,7 +603,7 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
     if (selectedImageRef.current) {
       selectedImageRef.current.drawControls(ctx, scale);
     }
-  }, [showUv]);
+  }, [showUv, fullUv]);
 
   const bakeTexture = useCallback(() => {
     const bakeCanvas = textureCanvasRef.current;
@@ -720,7 +740,7 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
 
   useEffect(() => {
     redrawDisplay();
-  }, [showUv, redrawDisplay]);
+  }, [showUv, fullUv, redrawDisplay]);
 
   useEffect(() => {
     bakeTexture();
@@ -1138,7 +1158,7 @@ const Canvas = forwardRef(({ textureCanvasRef, onTextureUpdated, modelUrl, showU
         />
 
         <div className="absolute inset-0 flex items-center justify-center p-4">
-          <div className="relative" style={{ boxShadow: '0 8px 24px rgba(0,0,0,0.15)', background: '#fff' }}>
+          <div className="relative">
             <canvas
               ref={displayCanvasRef}
               onPointerDown={handlePointerDown}

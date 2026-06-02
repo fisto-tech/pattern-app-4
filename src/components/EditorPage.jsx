@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import Navbar from './Navbar';
 import LeftSidebar from './LeftSidebar';
@@ -21,13 +21,8 @@ export default function EditorPage() {
   const [modelUrl, setModelUrl] = useState(location.state?.initialModelUrl || null);
   const [wireframe, setWireframe] = useState(false);
   const [showUv, setShowUv] = useState(true);
+  const [fullUv, setFullUv] = useState(false);
   const [bgColor, setBgColor] = useState('#ffffff');
-
-  useEffect(() => {
-    if (location.state?.initialModelUrl) {
-      setModelUrl(location.state.initialModelUrl);
-    }
-  }, [location.state]);
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-white">
@@ -36,28 +31,28 @@ export default function EditorPage() {
 
       {/* Main Content Area */}
       <div className="flex flex-1 overflow-hidden bg-[#f5efe6]">
-        
+
         {/* Sidebar Container */}
         <div className="flex z-20 h-full py-6 pl-6 pr-0 transition-all duration-300">
           <LeftSidebar active={activeTab} setActive={setActiveTab} />
-          
+
           {/* Render Popups based on activeTab */}
           <div className={`transition-all duration-300 overflow-hidden shrink-0 ${activeTab !== 'edit' ? 'w-[350px] ml-4' : 'w-0 ml-0'}`}>
             {activeTab === 'models' && (
-              <ModelsPopup 
-                onSelectModel={(url) => { setModelUrl(url); setActiveTab('edit'); }} 
+              <ModelsPopup
+                onSelectModel={(url) => { setModelUrl(url); setActiveTab('edit'); }}
                 currentModelUrl={modelUrl}
               />
             )}
             {activeTab === 'uploads' && (
-              <UploadsPopup 
+              <UploadsPopup
                 onUpload={(file, url) => {
                   if (!uploadedImages.includes(url)) {
                     setUploadedImages(prev => [url, ...prev]);
                   }
                   canvasRef.current?.uploadImage(url);
-                }} 
-                uploadedImages={uploadedImages} 
+                }}
+                uploadedImages={uploadedImages}
               />
             )}
             {activeTab === 'layout' && (
@@ -75,6 +70,7 @@ export default function EditorPage() {
             modelUrl={modelUrl}
             setModelUrl={setModelUrl}
             showUv={showUv}
+            fullUv={fullUv}
             bgColor={bgColor}
           />
         </div>
@@ -97,6 +93,8 @@ export default function EditorPage() {
             setWireframe={setWireframe}
             showUv={showUv}
             setShowUv={setShowUv}
+            fullUv={fullUv}
+            setFullUv={setFullUv}
             bgColor={bgColor}
             setBgColor={setBgColor}
           />

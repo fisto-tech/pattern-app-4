@@ -5,6 +5,7 @@ import roundContainerModel from '../assets/models/round-container.glb';
 import tShirtBlackModel from '../assets/models/t-shirt-black.glb';
 import foodPacking1Model from '../assets/models/test/food-packing-1.glb';
 import plasticBox1Model from '../assets/models/test/plastic-box-1.glb';
+import perfumeBoxModel from '../assets/models/test/perfume-box.glb';
 import ModelThumbnail from './ModelThumbnail';
 
 const BUILT_IN_MODELS = [
@@ -14,6 +15,7 @@ const BUILT_IN_MODELS = [
   { id: 't-shirt', name: 'T-Shirt', modelUrl: tShirtBlackModel },
   { id: 'food-packing-1', name: 'Food Pack', modelUrl: foodPacking1Model },
   { id: 'plastic-box-1', name: 'Plastic Box', modelUrl: plasticBox1Model },
+  { id: 'perfume-box', name: 'Perfume Box', modelUrl: perfumeBoxModel },
 ];
 
 export default function ModelsPopup({ onSelectModel, currentModelUrl }) {
@@ -25,7 +27,7 @@ export default function ModelsPopup({ onSelectModel, currentModelUrl }) {
     return () => {
       // cleanup object URLs created for uploaded files
       createdUrls.forEach((u) => {
-        try { URL.revokeObjectURL(u); } catch (e) { /* ignore */ }
+        try { URL.revokeObjectURL(u); } catch { /* ignore */ }
       });
     };
   }, [createdUrls]);

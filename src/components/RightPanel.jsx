@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
+// No uvLayout import needed since canvas is exactly 1:1 mapped now
 
 const packageColors = [
   { id: 'cream', color: '#f5e6d3' },
@@ -24,7 +25,8 @@ export default function RightPanel({
   setWireframe,
   showUv,
   setShowUv,
-  bgColor,
+  fullUv,
+  setFullUv,
   setBgColor,
 }) {
   const [openClose, setOpenClose] = useState(75);
@@ -32,11 +34,10 @@ export default function RightPanel({
   const [selectedColor, setSelectedColor] = useState('cream');
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [exporting, setExporting] = useState(false);
-  
+
   const customColorInputRef = useRef(null);
   const lastColorUpdate = useRef(0);
   const colorTimeoutRef = useRef(null);
-  const glCanvasRef = useRef(null);
   const captureRef = useRef(null);
   const orbitControlsRef = useRef(null);
 
@@ -66,6 +67,7 @@ export default function RightPanel({
       const texture = new THREE.CanvasTexture(textureCanvasRef.current);
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.flipY = false;
+      // No uv layout offset/scale applying, exactly 1:1 raw mapping
       texture.needsUpdate = true;
       scene.traverse((obj) => {
         if (!obj.isMesh) return;
@@ -96,7 +98,7 @@ export default function RightPanel({
   const handleCustomColorChange = (e) => {
     const newColor = e.target.value;
     setSelectedColor('custom');
-    
+
     const now = Date.now();
     if (now - lastColorUpdate.current >= 50) {
       setBgColor(newColor);
@@ -212,10 +214,15 @@ export default function RightPanel({
 
       {/* 2 Controls */}
       <div className="px-3 pb-2">
-        <div className="flex items-center justify-center gap-4 bg-white border border-gray-100 px-3 py-2 rounded-xl text-[11px] shadow-sm">
+        <div className="flex items-center justify-center gap-3 bg-white border border-gray-100 px-3 py-2 rounded-xl text-[11px] shadow-sm flex-wrap">
           <label className="flex items-center gap-1.5 cursor-pointer font-semibold text-gray-700">
             <input type="checkbox" checked={showUv} onChange={(e) => setShowUv(e.target.checked)} className="cursor-pointer" />
             Show UV
+          </label>
+          <div className="w-px h-4 bg-gray-200" />
+          <label className={`flex items-center gap-1.5 cursor-pointer font-semibold ${showUv ? 'text-gray-700' : 'text-gray-400'}`}>
+            <input type="checkbox" checked={fullUv} onChange={(e) => setFullUv(e.target.checked)} className="cursor-pointer" disabled={!showUv} />
+            Full UV
           </label>
           <div className="w-px h-4 bg-gray-200" />
           <label className="flex items-center gap-1.5 cursor-pointer font-semibold text-gray-700">
@@ -303,11 +310,10 @@ export default function RightPanel({
             <button
               key={v}
               onClick={() => setActiveView(v)}
-              className={`flex-1 py-[7px] rounded-full text-[11px] font-semibold border-none cursor-pointer transition-all duration-200 ${
-                activeView === v
+              className={`flex-1 py-[7px] rounded-full text-[11px] font-semibold border-none cursor-pointer transition-all duration-200 ${activeView === v
                   ? 'bg-white text-gray-800 shadow-sm'
                   : 'bg-transparent text-gray-600'
-              }`}
+                }`}
             >
               {v.charAt(0).toUpperCase() + v.slice(1)}
             </button>
@@ -339,7 +345,7 @@ export default function RightPanel({
           <button
             onClick={() => customColorInputRef.current?.click()}
             className="w-[26px] h-[26px] rounded-full bg-transparent cursor-pointer flex items-center justify-center p-0 transition-all duration-200 hover:scale-110 relative"
-            style={{ 
+            style={{
               border: selectedColor === 'custom' ? '2px solid #c0623a' : '1.5px solid #4a9e6e',
               outline: selectedColor === 'custom' ? '1px solid #c0623a' : 'none',
               outlineOffset: '1px',
@@ -348,11 +354,11 @@ export default function RightPanel({
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill={selectedColor === 'custom' ? '#c0623a' : '#4a9e6e'} className="w-3 h-3">
               <path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5v-3.5Z" />
             </svg>
-            <input 
-              type="color" 
-              ref={customColorInputRef} 
+            <input
+              type="color"
+              ref={customColorInputRef}
               onChange={handleCustomColorChange}
-              className="absolute opacity-0 w-0 h-0 pointer-events-none" 
+              className="absolute opacity-0 w-0 h-0 pointer-events-none"
             />
           </button>
         </div>
@@ -386,29 +392,26 @@ function AutoSizedModel({ modelUrl, textureCanvasRef, textureVersion, wireframe 
     });
     return clone;
   }, [scene]);
+  // No uvLayout memoization needed
   const canvasTextureRef = useRef(null);
   const appliedTextureVersionRef = useRef(-1);
   const appliedWireframeRef = useRef(null);
 
-  // Compute centering + scale from bounding box
-  const [autoTransform, setAutoTransform] = useState({ scale: 1, offset: [0, 0, 0] });
-
-  useEffect(() => {
-    if (!clonedScene) return;
+  const autoTransform = useMemo(() => {
+    if (!clonedScene) return { scale: 1, offset: [0, 0, 0] };
     const box = new THREE.Box3().setFromObject(clonedScene);
     const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
     const maxDim = Math.max(size.x, size.y, size.z) || 1;
-    // Normalize so the largest dimension is 1.7 units
     const scale = 1.7 / maxDim;
-    setAutoTransform({
+    return {
       scale,
       offset: [
         -center.x * scale,
         -center.y * scale,
         -center.z * scale,
       ],
-    });
+    };
   }, [clonedScene]);
 
   // Apply texture + wireframe
@@ -420,26 +423,21 @@ function AutoSizedModel({ modelUrl, textureCanvasRef, textureVersion, wireframe 
     if (!clonedScene || !textureCanvasRef?.current) return;
 
     const textureCanvas = textureCanvasRef.current;
-    if (!canvasTextureRef.current) {
-      const tex = new THREE.CanvasTexture(textureCanvas);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.wrapS = THREE.ClampToEdgeWrapping;
-      tex.wrapT = THREE.ClampToEdgeWrapping;
-      tex.generateMipmaps = true;
-      tex.minFilter = THREE.LinearMipmapLinearFilter;
-      tex.magFilter = THREE.LinearFilter;
-      tex.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy());
-      tex.flipY = false;
-      tex.needsUpdate = true;
-      canvasTextureRef.current = tex;
-    } else {
-      canvasTextureRef.current.image = textureCanvas;
-      canvasTextureRef.current.generateMipmaps = true;
-      canvasTextureRef.current.minFilter = THREE.LinearMipmapLinearFilter;
-      canvasTextureRef.current.magFilter = THREE.LinearFilter;
-      canvasTextureRef.current.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy());
-      canvasTextureRef.current.needsUpdate = true;
+    if (canvasTextureRef.current) {
+      canvasTextureRef.current.dispose();
     }
+
+    const tex = new THREE.CanvasTexture(textureCanvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.generateMipmaps = true;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy());
+    tex.flipY = false;
+    // No offset/scaling applying, use texture 1:1
+    canvasTextureRef.current = tex;
 
     clonedScene.traverse((obj) => {
       if (!obj.isMesh) return;
@@ -465,7 +463,7 @@ function AutoSizedModel({ modelUrl, textureCanvasRef, textureVersion, wireframe 
 
     appliedTextureVersionRef.current = textureVersion;
     appliedWireframeRef.current = wireframe;
-  }, [clonedScene, textureCanvasRef, textureVersion, wireframe]);
+  }, [clonedScene, gl, textureCanvasRef, textureVersion, wireframe]);
 
   if (!clonedScene) return null;
 
@@ -480,35 +478,6 @@ function AutoSizedModel({ modelUrl, textureCanvasRef, textureVersion, wireframe 
   );
 }
 
-function MaterialItem({ icon, title, subtitle, hasArrow }) {
-  const iconBg = { shadow: '#fef3c7', camera: '#fce7f3', size: '#e0e7ff' };
-  const iconColor = { shadow: '#d97706', camera: '#db2777', size: '#6366f1' };
-  const icons = {
-    shadow: <path d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM6.75 9.25a.75.75 0 0 0 0 1.5h4.59l-2.1 1.95a.75.75 0 0 0 1.02 1.1l3.5-3.25a.75.75 0 0 0 0-1.1l-3.5-3.25a.75.75 0 1 0-1.02 1.1l2.1 1.95H6.75Z" />,
-    camera: <path d="M1 8a2 2 0 0 1 2-2h.93a2 2 0 0 0 1.664-.89l.812-1.22A2 2 0 0 1 8.07 3h3.86a2 2 0 0 1 1.664.89l.812 1.22A2 2 0 0 0 16.07 6H17a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8Zm13.5 3a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM10 14a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />,
-    size: <path fillRule="evenodd" d="M1 6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H4a3 3 0 0 1-3-3V6Zm4 1.5a2 2 0 1 1 4 0 2 2 0 0 1-4 0Zm2 3a4 4 0 0 0-3.665 2.395.75.75 0 0 0 .416 1A8.98 8.98 0 0 0 7 14.5a8.98 8.98 0 0 0 3.249-.605.75.75 0 0 0 .416-1A4 4 0 0 0 7 10.5Z" clipRule="evenodd" />,
-  };
-
-  return (
-    <div className="flex items-center gap-2.5 p-2.5 rounded-xl border border-gray-100 hover:border-gray-200 transition-colors cursor-pointer group">
-      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: iconBg[icon] }}>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill={iconColor[icon]} className="w-[16px] h-[16px]">
-          {icons[icon]}
-        </svg>
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-[12px] font-semibold text-gray-800 m-0 leading-tight">{title}</p>
-        <p className="text-[10px] text-gray-400 m-0 leading-tight mt-[2px]">{subtitle}</p>
-      </div>
-      {hasArrow && (
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-gray-300 group-hover:text-gray-500 transition-colors shrink-0">
-          <path fillRule="evenodd" d="M8.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
-        </svg>
-      )}
-    </div>
-  );
-}
-
 // Lives inside R3FCanvas — uses useThree to access the live renderer, scene, camera
 const ScreenshotHelper = forwardRef((_, ref) => {
   const { gl, scene, camera } = useThree();
@@ -517,20 +486,20 @@ const ScreenshotHelper = forwardRef((_, ref) => {
     capture: () => {
       // Save current pixel ratio
       const currentPixelRatio = gl.getPixelRatio();
-      
+
       // Temporarily set a high pixel ratio for a high-quality render
       gl.setPixelRatio(4);
-      
+
       // Force a fresh render with the high-res state
       gl.render(scene, camera);
-      
+
       // Read the framebuffer
       const url = gl.domElement.toDataURL('image/png', 1.0);
-      
+
       // Restore original state to prevent the UI from staying high-res/slow
       gl.setPixelRatio(currentPixelRatio);
       gl.render(scene, camera);
-      
+
       const a = document.createElement('a');
       a.href = url;
       a.download = 'model-render-high-res.png';
